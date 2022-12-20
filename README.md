@@ -23,7 +23,7 @@ This is the official implementation of Neural Radiance Fields with Points Cloud 
     │   │   │  |   |──...
 ```
 ## Docker
-- We provide the Docker images of our environment at [DockerHub]('https://drive.google.com/drive/folders/14boI-o5hGO9srnWaaogTU5_ji7wkX2S7').
+- We provide the Docker images of our environment at [DockerHub]('https://hub.docker.com/repository/docker/quan5609/cloud_nerf').
 - To create docker container from image, run the following command
   ```
   docker run \
