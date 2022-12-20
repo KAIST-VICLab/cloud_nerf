@@ -23,6 +23,18 @@ This is the official implementation of Neural Radiance Fields with Points Cloud 
     │   │   │  |   |──...
 ```
 ## Docker
-We provide the Docker images of our environment at 
+- We provide the Docker images of our environment at [DockerHub]('https://drive.google.com/drive/folders/14boI-o5hGO9srnWaaogTU5_ji7wkX2S7').
+- To create docker container from image run the following command
+  ```
+  docker run \
+  --name ${CONTAINER_NAME} \
+  --gpus all \
+  --mount type=bind,source="${PATH_TO_SOURCE}",target="/workspace/source" \
+  --mount type=bind,source="${PATH_TO_DATASETS}",target="/workspace/datasets/" \
+  --shm-size=16GB \
+  -it ${IMAGE_NAME}
+  ```
+
+## Visualization
 # Acknowledgement
 Our repo is based on [nerf](https://github.com/bmild/nerf), [nerf_pl](https://github.com/kwea123/nerf_pl), and [DCCDIF](https://github.com/lity20/DCCDIF)
