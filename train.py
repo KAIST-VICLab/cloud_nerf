@@ -150,30 +150,6 @@ class NeRFSystem(LightningModule):
 
         pts_world = np.concatenate([pts_world, global_kps], axis=0)
 
-        # # # ! USE MVS POINTS INSTEAD OF COLMAP
-        # depth_aware_points = []
-        # depth_max = pts_world.max(axis=0)[-1]
-        # depth_min = pts_world.min(axis=0)[-1]
-        # depth_num_bins = 16
-        # bin_size = 2 * (depth_max - depth_min) / \
-        #     (depth_num_bins * (1 + depth_num_bins))
-        # bin_indice = torch.linspace(0, depth_num_bins - 1, depth_num_bins)
-        # bin_value = (bin_indice + 0.5).pow(2) * \
-        #     bin_size / 2 - bin_size / 8 + depth_min
-        # bin_value = torch.cat([bin_value, torch.tensor([depth_max])], dim=0)
-
-        # for i in range(bin_value.shape[0] - 1):
-        #     current_bin_id = (mvs_points[:, -1] >= bin_value[i].numpy()
-        #                       ) & (mvs_points[:, -1] < bin_value[i + 1].numpy())
-        #     curr_points = mvs_points[current_bin_id]
-
-        #     depth_aware_points.append(fps(
-        #         curr_points, config['code_cloud']['num_codes'] // depth_num_bins))
-
-        #     # np.save('assets/fps_code_raw_{}.npy'.format(i), fps_kps)
-        # # breakpoint()
-        # fps_kps = np.concatenate(depth_aware_points, axis=0)
-
         # ! IMPORTANT WE NEED TO TRANSLATE WORLD COORDS TO AVG POSE ORIGIN
         poses = np.concatenate(
             [poses[..., 0:1], -poses[..., 1:3], poses[..., 3:4]], -1)
