@@ -24,7 +24,7 @@ This is the official implementation of Neural Radiance Fields with Points Cloud 
 ```
 ## Docker
 - We provide the Docker images of our environment at [DockerHub]('https://drive.google.com/drive/folders/14boI-o5hGO9srnWaaogTU5_ji7wkX2S7').
-- To create docker container from image run the following command
+- To create docker container from image, run the following command
   ```
   docker run \
   --name ${CONTAINER_NAME} \
@@ -34,7 +34,35 @@ This is the official implementation of Neural Radiance Fields with Points Cloud 
   --shm-size=16GB \
   -it ${IMAGE_NAME}
   ```
-
+## Train & Evaluation
+- To train from scratch, run the following command
+  ```
+  CUDA_VISIBLE_DEVICES=1 python train.py \
+  --dataset_name llff \
+  --root_dir /workspace/datasets/nerf_llff_data/${SCENE_NAME}/ \
+  --N_importance 64 \
+  --N_sample 64 \
+  --img_wh 1008 756 \
+  --num_epochs 10 \
+  --batch_size 4096 \
+  --optimizer adam \
+  --lr 5e-3 \
+  --lr_scheduler steplr \
+  --decay_step 2 4 6 8 \
+  --decay_gamma 0.5 \
+  --exp_name ${EXP_NAME}
+  ```
+- To evaluate a checkpoint, run the following command
+  ```
+  CUDA_VISIBLE_DEVICES=1 python eval.py \
+  --dataset_name llff \
+  --root_dir /workspace/datasets/nerf_llff_data/${SCENE_NAME}/ \
+  --N_importance 64 \
+  --N_sample 64 \
+  --img_wh 1008 756 \
+  --weight_path ${PATH_TO_CHECKPOINT} \
+  --split val
+  ```
 ## Visualization
 # Acknowledgement
 Our repo is based on [nerf](https://github.com/bmild/nerf), [nerf_pl](https://github.com/kwea123/nerf_pl), and [DCCDIF](https://github.com/lity20/DCCDIF)
