@@ -284,6 +284,60 @@ class NeRFSystem(LightningModule):
 
         return world_points
 
+    def fwd_consistency_check(self, per_view_points):
+        N, H, W = self.depths.shape
+        global_valid_points = []
+        for view_id in range(per_view_points.shape[0]):
+            curr_view_points = per_view_points[view_id].transpose(
+                1, 0)  # 3, H*W
+            homo_view_points = torch.cat(
+                [curr_view_points, torch.ones(1, H * W)], dim=0)  # 4, H*W
+            homo_view_points = homo_view_points.unsqueeze(
+                0).repeat(N, 1, 1)  # N,4,H*W
+
+            # project to camera space
+            T = torch.from_numpy(self.origin_extrinsics).float()
+            homo_T = torch.cat([T, torch.zeros(N, 1, 4)], dim=1)
+            homo_T[:, -1, -1] = 1
+            inv_T = torch.inverse(homo_T)
+            cam_points = torch.matmul(inv_T[:, :3, :], homo_view_points)
+
+            # project to image space
+            mvs_K = torch.from_numpy(self.mvs_K).unsqueeze(
+                0).repeat(N, 1, 1).float()
+            cam_points = torch.matmul(mvs_K[:, :3, :3], cam_points)
+            cam_points[:, :2, :] /= cam_points[:, 2:, :]
+
+            z_values = cam_points[:, 2:, :].view(N, 1, H, W)  # N,1,H,W
+            xy_coords = cam_points[:, :2, :].transpose(
+                2, 1).view(N, H, W, 2)  # N,H,W,2
+
+            xy_coords[..., 0] /= W - 1
+            xy_coords[..., 1] /= H - 1
+            xy_coords = (xy_coords - 0.5) * 2
+
+            mvs_depth = torch.from_numpy(
+                self.depths).float().unsqueeze(1)  # N,1,H,W
+            ref_z_values = F.grid_sample(
+                mvs_depth, xy_coords, mode='bilinear', align_corners=False)
+
+            # ! z_values >= alpha*ref_values, also invalid index is 0 so they are satisfied this condition
+            # ! point must be visible in at least n views
+            err = z_values - 0.9 * ref_z_values
+
+            visible_mask = ref_z_values != 0
+            visible_count = visible_mask.int().sum(0)
+            valid_visible = visible_count >= 1
+            valid_points = err >= 0
+            valid_points = torch.all(
+                valid_points, dim=0) & valid_visible  # 1,H,W
+            global_valid_points.append(valid_points)
+        global_valid_points = torch.cat(
+            global_valid_points, dim=0).view(N, H * W)  # N,H,W
+
+        filtered_points = per_view_points[global_valid_points, :]
+        return filtered_points
+
     def forward(self, rays):
         """Do batched inference on rays using chunk."""
         B = rays.shape[0]
