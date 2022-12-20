@@ -215,6 +215,75 @@ class NeRFSystem(LightningModule):
 
         return kps_ndc, fps_kps_ndc
 
+    def load_mvs_depth(self):
+        depth_glob = os.path.join(self.root_dir, "depths", "*.pfm")
+        self.depth_list = sorted(glob.glob(depth_glob))
+        depths = []
+        for i in range(len(self.depth_list)):
+            depth = read_gen(self.depth_list[i])
+
+            depths.append(depth)
+        self.depths = np.stack(depths, 0).astype(np.float32)  # N x H x W
+
+        per_view_points = self.project_to_3d()
+        mvs_points = self.fwd_consistency_check(per_view_points)
+        return mvs_points
+
+    def project_to_3d(self):
+        N, H, W = self.depths.shape
+        focal = self.origin_intrinsics[1].params[0]
+        origin_h, origin_w = self.origin_intrinsics[1].height, self.origin_intrinsics[1].width
+
+        origin_cy, origin_cx = self.origin_intrinsics[1].params[2], self.origin_intrinsics[1].params[1]
+
+        origin_K = np.array([
+            [focal, 0, origin_cx, 0],
+            [0, focal, origin_cy, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1]
+        ])
+
+        origin_K[0, :] /= origin_w
+        origin_K[1, :] /= origin_h
+
+        self.normalized_K = origin_K
+
+        mvs_K = self.normalized_K.copy()
+        mvs_K[0, :] *= W
+        mvs_K[1, :] *= H
+        self.mvs_K = mvs_K
+
+        inv_mvs_K = np.linalg.pinv(mvs_K)
+        inv_mvs_K = torch.from_numpy(inv_mvs_K)
+
+        # create mesh grid for mvs image
+        meshgrid = np.meshgrid(range(W), range(H), indexing="xy")
+        id_coords = (np.stack(meshgrid, axis=0).astype(
+            np.float32)).reshape(2, -1)
+        id_coords = torch.from_numpy(id_coords)
+
+        ones = torch.ones(N, 1, H * W)
+
+        pix_coords = torch.unsqueeze(torch.stack(
+            [id_coords[0].view(-1), id_coords[1].view(-1)], 0), 0)
+        pix_coords = pix_coords.repeat(N, 1, 1)
+        pix_coords = torch.cat([pix_coords, ones], 1)
+
+        # project to cam coord
+        inv_mvs_K = inv_mvs_K[None, ...].repeat(N, 1, 1).float()
+        cam_points = torch.matmul(inv_mvs_K[:, :3, :3], pix_coords)
+        mvs_depth = torch.from_numpy(
+            self.depths).float().unsqueeze(1).view(N, 1, -1)
+        cam_points = mvs_depth * cam_points
+        cam_points = torch.cat([cam_points, ones], 1)
+
+        # project to world coord
+        T = torch.from_numpy(self.origin_extrinsics).float()
+        world_points = torch.matmul(T, cam_points)
+        world_points = world_points.permute(0, 2, 1)  # N, H*W, 3
+
+        return world_points
+
     def forward(self, rays):
         """Do batched inference on rays using chunk."""
         B = rays.shape[0]
