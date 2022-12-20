@@ -80,6 +80,141 @@ class NeRFSystem(LightningModule):
             self.models = {'fine': self.nerf_fine}
             load_ckpt(self.nerf_fine, hparams.weight_path, 'nerf_fine')
 
+    def read_colmap_meta(self, hparams):
+        # Step 1: rescale focal length according to training resolution
+        camdata = read_cameras_binary(os.path.join(
+            hparams.root_dir, 'sparse/0/cameras.bin'))
+        self.origin_intrinsics = camdata
+        H = camdata[1].height
+        W = camdata[1].width
+        self.focal = camdata[1].params[0] * hparams.img_wh[0] / W
+
+        # Step 2: correct poses
+        # read extrinsics (of successfully reconstructed images)
+        imdata = read_images_binary(os.path.join(
+            hparams.root_dir, 'sparse/0/images.bin'))
+
+        w2c_mats = []
+        bottom = np.array([0, 0, 0, 1.]).reshape(1, 4)
+        for k in imdata:
+            im = imdata[k]
+            R = im.qvec2rotmat()
+            t = im.tvec.reshape(3, 1)
+            w2c_mats += [np.concatenate([np.concatenate([R, t], 1), bottom], 0)]
+        w2c_mats = np.stack(w2c_mats, 0)
+        # (N_images, 3, 4) cam2world matrices
+        poses = np.linalg.inv(w2c_mats)[:, :3]
+        self.origin_extrinsics = poses
+
+        pts3d = read_points3d_binary(os.path.join(
+            hparams.root_dir, 'sparse/0/points3D.bin'))
+        mvs_points = self.load_mvs_depth().numpy()  # ! This is mvs depth pretrained
+        near_bound = mvs_points.min(axis=0)[-1]
+
+        # Errs = np.array([point3D.error for point3D in pts3d.values()])
+        # err_bound = np.percentile(Errs, 30)
+        pts3d = {k: v for (k, v) in pts3d.items() if v.xyz[-1] > near_bound}
+
+        pts_world = np.zeros((1, 3, len(pts3d)))  # (1, 3, N_points)
+        self.bounds = np.zeros((len(poses), 2))  # (N_images, 2)
+        visibilities = np.zeros((len(poses), len(pts3d))
+                                )  # (N_images, N_points)
+
+        for i, k in enumerate(pts3d):
+            pts_world[0, :, i] = pts3d[k].xyz
+            for j in pts3d[k].image_ids:
+                visibilities[j - 1, i] = 1
+
+        depths = ((pts_world - poses[..., 3:4]) * poses[..., 2:3]).sum(1)
+        for i in range(len(poses)):
+            visibility_i = visibilities[i]
+            zs = depths[i][visibility_i == 1]
+            self.bounds[i] = [np.percentile(zs, 0.1), np.percentile(zs, 99.9)]
+            valid_depth = (depths[i] >= self.bounds[i][0]) & (
+                depths[i] <= self.bounds[i][1])
+            visibility_i = visibility_i.astype(bool) & valid_depth
+            visibilities[i] = visibility_i.astype(np.float64)
+
+        # ! IMPORTANT REMOVE OUTLIERS BY USING PER IMAGE BOUND
+        valid_points = np.any(visibilities, axis=0)
+        pts_world = np.transpose(pts_world[0])[valid_points]  # (N_points, 3)
+
+        # fps
+        fps_kps = fps(
+            pts_world, config['code_cloud']['num_codes'])
+        global_kps = fps(
+            mvs_points, pts_world.shape[0])
+
+        # np.save('assets/fps_mvs_points.npy', global_kps)
+        # breakpoint()
+
+        pts_world = np.concatenate([pts_world, global_kps], axis=0)
+
+        # # # ! USE MVS POINTS INSTEAD OF COLMAP
+        # depth_aware_points = []
+        # depth_max = pts_world.max(axis=0)[-1]
+        # depth_min = pts_world.min(axis=0)[-1]
+        # depth_num_bins = 16
+        # bin_size = 2 * (depth_max - depth_min) / \
+        #     (depth_num_bins * (1 + depth_num_bins))
+        # bin_indice = torch.linspace(0, depth_num_bins - 1, depth_num_bins)
+        # bin_value = (bin_indice + 0.5).pow(2) * \
+        #     bin_size / 2 - bin_size / 8 + depth_min
+        # bin_value = torch.cat([bin_value, torch.tensor([depth_max])], dim=0)
+
+        # for i in range(bin_value.shape[0] - 1):
+        #     current_bin_id = (mvs_points[:, -1] >= bin_value[i].numpy()
+        #                       ) & (mvs_points[:, -1] < bin_value[i + 1].numpy())
+        #     curr_points = mvs_points[current_bin_id]
+
+        #     depth_aware_points.append(fps(
+        #         curr_points, config['code_cloud']['num_codes'] // depth_num_bins))
+
+        #     # np.save('assets/fps_code_raw_{}.npy'.format(i), fps_kps)
+        # # breakpoint()
+        # fps_kps = np.concatenate(depth_aware_points, axis=0)
+
+        # ! IMPORTANT WE NEED TO TRANSLATE WORLD COORDS TO AVG POSE ORIGIN
+        poses = np.concatenate(
+            [poses[..., 0:1], -poses[..., 1:3], poses[..., 3:4]], -1)
+        poses, pose_avg = center_poses(poses)
+        pose_avg_homo = np.eye(4)
+        pose_avg_homo[:3] = pose_avg
+
+        pts_world_homo = np.concatenate(
+            [pts_world, np.ones((pts_world.shape[0], 1))], axis=1)
+        fps_kps_homo = np.concatenate(
+            [fps_kps, np.ones((fps_kps.shape[0], 1))], axis=1)
+
+        trans_pts_world = np.linalg.inv(
+            pose_avg_homo) @ pts_world_homo[:, :, None]
+        trans_fps_kps = np.linalg.inv(pose_avg_homo) @ fps_kps_homo[:, :, None]
+
+        # ! scale the nearest points after cenetering
+        kps = torch.from_numpy(trans_pts_world[:, :3, 0])
+        fps_kps = torch.from_numpy(trans_fps_kps[:, :3, 0])
+        near_original = self.bounds.min()
+        scale_factor = near_original * 0.75  # 0.75 is the default parameter
+        kps /= scale_factor
+        fps_kps /= scale_factor
+
+        # np.save('assets/fps_code_centered.npy', fps_kps)
+        # breakpoint()
+
+        # convert to ndc
+        kps_ndc = get_ndc_coor(
+            hparams.img_wh[1], hparams.img_wh[0], self.focal, 1.0, kps)
+
+        # np.save('assets/code_ndc.npy', kps_ndc)
+        # breakpoint()
+        fps_kps_ndc = get_ndc_coor(hparams.img_wh[1], hparams.img_wh[0],
+                                   self.focal, 1.0, fps_kps)
+
+        # np.save('assets/fps_code_ndc.npy', fps_kps_ndc)
+        # breakpoint()
+
+        return kps_ndc, fps_kps_ndc
+
     def forward(self, rays):
         """Do batched inference on rays using chunk."""
         B = rays.shape[0]
