@@ -6,8 +6,8 @@ This is the official implementation of Neural Radiance Fields with Points Cloud 
 - For the environment, we provide our Docker image for the best reproduction.
 - The scen optimization scripts are provided in the instruction.
 ## Data
-- We evaluate our framework on forward-facing LLFF dataset, available at [Google drive]('https://drive.google.com/drive/folders/14boI-o5hGO9srnWaaogTU5_ji7wkX2S7').
-- We also need to download the pre-trained MVS depth estimation at [Google drive]('https://drive.google.com/drive/folders/13lreojzboR7X7voJ1q8JduvWDdzyrwRe').
+- We evaluate our framework on forward-facing LLFF dataset, available at [Google drive](https://drive.google.com/drive/folders/14boI-o5hGO9srnWaaogTU5_ji7wkX2S7).
+- We also need to download the pre-trained MVS depth estimation at [Google drive](https://drive.google.com/drive/folders/13lreojzboR7X7voJ1q8JduvWDdzyrwRe).
 - Our data folder structure is same as follow:
 ```
 
@@ -23,7 +23,7 @@ This is the official implementation of Neural Radiance Fields with Points Cloud 
     │   │   │  |   |──...
 ```
 ## Docker
-- We provide the Docker images of our environment at [DockerHub]('https://hub.docker.com/repository/docker/quan5609/cloud_nerf').
+- We provide the Docker images of our environment at [DockerHub](https://hub.docker.com/repository/docker/quan5609/cloud_nerf).
 - To create docker container from image, run the following command
   ```
   docker run \
@@ -71,4 +71,4 @@ This is the official implementation of Neural Radiance Fields with Points Cloud 
 - Visualization of Room scene
 <img src="assets/room.gif" width="400">
 # Acknowledgement
-Our repo is based on [nerf]('https://github.com/bmild/nerf'), [nerf_pl]('https://github.com/kwea123/nerf_pl'), [DCCDIF]('https://github.com/lity20/DCCDIF'), and [Pointnet2_PyTorch]('https://github.com/erikwijmans/Pointnet2_PyTorch').
+Our repo is based on [nerf](https://github.com/bmild/nerf), [nerf_pl](https://github.com/kwea123/nerf_pl), [DCCDIF](https://github.com/lity20/DCCDIF), and [Pointnet2_PyTorch](https://github.com/erikwijmans/Pointnet2_PyTorch).
