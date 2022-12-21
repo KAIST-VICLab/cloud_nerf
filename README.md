@@ -71,4 +71,4 @@ This is the official implementation of Neural Radiance Fields with Points Cloud 
 - Visualization of Room scene
 <img src="assets/room.gif" width="400">
 # Acknowledgement
-Our repo is based on [nerf](https://github.com/bmild/nerf), [nerf_pl](https://github.com/kwea123/nerf_pl), [DCCDIF](https://github.com/lity20/DCCDIF), and [Pointnet2_PyTorch](https://github.com/erikwijmans/Pointnet2_PyTorch).
+Our repo is based on [nerf]('https://github.com/bmild/nerf'), [nerf_pl]('https://github.com/kwea123/nerf_pl'), [DCCDIF]('https://github.com/lity20/DCCDIF'), and [Pointnet2_PyTorch]('https://github.com/erikwijmans/Pointnet2_PyTorch').
