@@ -64,11 +64,14 @@ This is the official implementation of Neural Radiance Fields with Points Cloud 
   --split val
   ```
 ## Visualization
+
 - Visualization of Fern scene
 <img src="assets/fern.gif" width="400">
 - Visualization of Horn scene
 <img src="assets/horn.gif" width="400">
 - Visualization of Room scene
 <img src="assets/room.gif" width="400">
+
+
 # Acknowledgement
 Our repo is based on [nerf](https://github.com/bmild/nerf), [nerf_pl](https://github.com/kwea123/nerf_pl), [DCCDIF](https://github.com/lity20/DCCDIF), and [Pointnet2_PyTorch](https://github.com/erikwijmans/Pointnet2_PyTorch).
