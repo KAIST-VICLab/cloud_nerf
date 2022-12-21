@@ -20,9 +20,7 @@ def get_ray_directions(H, W, focal):
     i, j = grid.unbind(-1)
     # the direction here is without +0.5 pixel centering as calibration is not so accurate
     # see https://github.com/bmild/nerf/issues/24
-    directions = \
-        torch.stack([(i - W / 2) / focal, -(j - H / 2) /
-                    focal, -torch.ones_like(i)], -1)  # (H, W, 3)
+    directions = torch.stack([(i - W / 2) / focal, -(j - H / 2) / focal, -torch.ones_like(i)], -1)  # (H, W, 3)
 
     return directions
 
@@ -83,12 +81,12 @@ def get_ndc_rays(H, W, focal, near, rays_o, rays_d):
     oy_oz = rays_o[..., 1] / rays_o[..., 2]
 
     # Projection
-    o0 = -1. / (W / (2. * focal)) * ox_oz
-    o1 = -1. / (H / (2. * focal)) * oy_oz
-    o2 = 1. + 2. * near / rays_o[..., 2]
+    o0 = -1.0 / (W / (2.0 * focal)) * ox_oz
+    o1 = -1.0 / (H / (2.0 * focal)) * oy_oz
+    o2 = 1.0 + 2.0 * near / rays_o[..., 2]
 
-    d0 = -1. / (W / (2. * focal)) * (rays_d[..., 0] / rays_d[..., 2] - ox_oz)
-    d1 = -1. / (H / (2. * focal)) * (rays_d[..., 1] / rays_d[..., 2] - oy_oz)
+    d0 = -1.0 / (W / (2.0 * focal)) * (rays_d[..., 0] / rays_d[..., 2] - ox_oz)
+    d1 = -1.0 / (H / (2.0 * focal)) * (rays_d[..., 1] / rays_d[..., 2] - oy_oz)
     d2 = 1 - o2
 
     rays_o = torch.stack([o0, o1, o2], -1)  # (B, 3)
@@ -103,19 +101,20 @@ def get_ndc_coor(H, W, focal, near, pts):
     oy_oz = pts[..., 1] / pts[..., 2]
 
     # Projection
-    o0 = -1. / (W / (2. * focal)) * ox_oz
-    o1 = -1. / (H / (2. * focal)) * oy_oz
-    o2 = 1. + 2. * near / pts[..., 2]
+    o0 = -1.0 / (W / (2.0 * focal)) * ox_oz
+    o1 = -1.0 / (H / (2.0 * focal)) * oy_oz
+    o2 = 1.0 + 2.0 * near / pts[..., 2]
 
     pts = torch.stack([o0, o1, o2], -1)  # (B, 3)
 
     return pts
 
+
 # read mvs pretrained depth
 
 
 def readPFM(file):
-    file = open(file, 'rb')
+    file = open(file, "rb")
 
     color = None
     width = None
@@ -124,27 +123,27 @@ def readPFM(file):
     endian = None
 
     header = file.readline().rstrip()
-    if header == b'PF':
+    if header == b"PF":
         color = True
-    elif header == b'Pf':
+    elif header == b"Pf":
         color = False
     else:
-        raise Exception('Not a PFM file.')
+        raise Exception("Not a PFM file.")
 
-    dim_match = re.match(rb'^(\d+)\s(\d+)\s$', file.readline())
+    dim_match = re.match(rb"^(\d+)\s(\d+)\s$", file.readline())
     if dim_match:
         width, height = map(int, dim_match.groups())
     else:
-        raise Exception('Malformed PFM header.')
+        raise Exception("Malformed PFM header.")
 
     scale = float(file.readline().rstrip())
     if scale < 0:  # little-endian
-        endian = '<'
+        endian = "<"
         scale = -scale
     else:
-        endian = '>'  # big-endian
+        endian = ">"  # big-endian
 
-    data = np.fromfile(file, endian + 'f')
+    data = np.fromfile(file, endian + "f")
     shape = (height, width, 3) if color else (height, width)
 
     data = np.reshape(data, shape)
