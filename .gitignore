@@ -4,7 +4,6 @@ ckpts/
 results/
 *.ply
 *.vol
-assets/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
