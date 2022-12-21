@@ -188,15 +188,12 @@ if __name__ == "__main__":
 
     if psnrs:
         mean_psnr = np.mean(psnrs)
-        print(psnrs)
         print(f"Mean PSNR : {mean_psnr:.3f}")
 
     if ssims:
         mean_ssim = np.mean(ssims)
-        print(ssims)
         print(f"Mean SSIM : {mean_ssim:.3f}")
 
     if mean_lpips:
-        print(mean_lpips)
         mean_lpips = np.mean(np.array(mean_lpips))
         print(f"Mean LPIPS : {mean_lpips:.3f}")
