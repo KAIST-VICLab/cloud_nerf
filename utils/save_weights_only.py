@@ -1,5 +1,6 @@
-import torch
 import argparse
+
+import torch
 
 
 def get_opts():
