@@ -1,10 +1,12 @@
 from datetime import datetime
+
+import faiss  # make faiss available
+import faiss.contrib.torch_utils
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-import faiss  # make faiss available
-import faiss.contrib.torch_utils
+
 
 # ! CloudNeRF configs
 config = {}
