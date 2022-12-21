@@ -81,7 +81,6 @@ class NeRFSystem(LightningModule):
             load_ckpt(self.nerf_fine, hparams.weight_path, 'nerf_fine')
 
     def read_colmap_meta(self, hparams):
-        # Step 1: rescale focal length according to training resolution
         camdata = read_cameras_binary(os.path.join(
             hparams.root_dir, 'sparse/0/cameras.bin'))
         self.origin_intrinsics = camdata
@@ -89,8 +88,6 @@ class NeRFSystem(LightningModule):
         W = camdata[1].width
         self.focal = camdata[1].params[0] * hparams.img_wh[0] / W
 
-        # Step 2: correct poses
-        # read extrinsics (of successfully reconstructed images)
         imdata = read_images_binary(os.path.join(
             hparams.root_dir, 'sparse/0/images.bin'))
 
@@ -108,11 +105,9 @@ class NeRFSystem(LightningModule):
 
         pts3d = read_points3d_binary(os.path.join(
             hparams.root_dir, 'sparse/0/points3D.bin'))
-        mvs_points = self.load_mvs_depth().numpy()  # ! This is mvs depth pretrained
-        near_bound = mvs_points.min(axis=0)[-1]
 
-        # Errs = np.array([point3D.error for point3D in pts3d.values()])
-        # err_bound = np.percentile(Errs, 30)
+        mvs_points = self.load_mvs_depth().numpy()
+        near_bound = mvs_points.min(axis=0)[-1]
         pts3d = {k: v for (k, v) in pts3d.items() if v.xyz[-1] > near_bound}
 
         pts_world = np.zeros((1, 3, len(pts3d)))  # (1, 3, N_points)
@@ -135,7 +130,6 @@ class NeRFSystem(LightningModule):
             visibility_i = visibility_i.astype(bool) & valid_depth
             visibilities[i] = visibility_i.astype(np.float64)
 
-        # ! IMPORTANT REMOVE OUTLIERS BY USING PER IMAGE BOUND
         valid_points = np.any(visibilities, axis=0)
         pts_world = np.transpose(pts_world[0])[valid_points]  # (N_points, 3)
 
@@ -145,12 +139,7 @@ class NeRFSystem(LightningModule):
         global_kps = fps(
             mvs_points, pts_world.shape[0])
 
-        # np.save('assets/fps_mvs_points.npy', global_kps)
-        # breakpoint()
-
         pts_world = np.concatenate([pts_world, global_kps], axis=0)
-
-        # ! IMPORTANT WE NEED TO TRANSLATE WORLD COORDS TO AVG POSE ORIGIN
         poses = np.concatenate(
             [poses[..., 0:1], -poses[..., 1:3], poses[..., 3:4]], -1)
         poses, pose_avg = center_poses(poses)
@@ -166,7 +155,6 @@ class NeRFSystem(LightningModule):
             pose_avg_homo) @ pts_world_homo[:, :, None]
         trans_fps_kps = np.linalg.inv(pose_avg_homo) @ fps_kps_homo[:, :, None]
 
-        # ! scale the nearest points after cenetering
         kps = torch.from_numpy(trans_pts_world[:, :3, 0])
         fps_kps = torch.from_numpy(trans_fps_kps[:, :3, 0])
         near_original = self.bounds.min()
@@ -174,21 +162,11 @@ class NeRFSystem(LightningModule):
         kps /= scale_factor
         fps_kps /= scale_factor
 
-        # np.save('assets/fps_code_centered.npy', fps_kps)
-        # breakpoint()
-
         # convert to ndc
         kps_ndc = get_ndc_coor(
             hparams.img_wh[1], hparams.img_wh[0], self.focal, 1.0, kps)
-
-        # np.save('assets/code_ndc.npy', kps_ndc)
-        # breakpoint()
         fps_kps_ndc = get_ndc_coor(hparams.img_wh[1], hparams.img_wh[0],
                                    self.focal, 1.0, fps_kps)
-
-        # np.save('assets/fps_code_ndc.npy', fps_kps_ndc)
-        # breakpoint()
-
         return kps_ndc, fps_kps_ndc
 
     def load_mvs_depth(self):
@@ -296,9 +274,6 @@ class NeRFSystem(LightningModule):
                 self.depths).float().unsqueeze(1)  # N,1,H,W
             ref_z_values = F.grid_sample(
                 mvs_depth, xy_coords, mode='bilinear', align_corners=False)
-
-            # ! z_values >= alpha*ref_values, also invalid index is 0 so they are satisfied this condition
-            # ! point must be visible in at least n views
             err = z_values - 0.9 * ref_z_values
 
             visible_mask = ref_z_values != 0
@@ -323,7 +298,6 @@ class NeRFSystem(LightningModule):
                 render_rays(self.models,
                             self.embeddings,
                             rays[i:i + self.hparams.chunk],
-                            # rays[503870:503880],
                             self.hparams.N_samples,
                             self.hparams.use_disp,
                             self.hparams.perturb,
@@ -344,8 +318,6 @@ class NeRFSystem(LightningModule):
         kwargs = {'root_dir': self.hparams.root_dir,
                   'img_wh': tuple(self.hparams.img_wh)}
         if self.hparams.dataset_name == 'llff':
-            kwargs['spheric_poses'] = self.hparams.spheric_poses
-            # kwargs['val_num'] = self.hparams.num_gpus
             kwargs['val_num'] = 3
         self.train_dataset = dataset(split='train', **kwargs)
         self.val_dataset = dataset(split='val', **kwargs)
