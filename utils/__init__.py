@@ -7,7 +7,6 @@ from torch.optim import SGD, Adam
 # scheduler
 from torch.optim.lr_scheduler import CosineAnnealingLR, MultiStepLR
 
-from .visualization import *
 from .warmup_scheduler import GradualWarmupScheduler
 
 
@@ -30,13 +29,17 @@ def get_optimizer(hparams, models):
     eps = 1e-8
     parameters = get_parameters(models)
     if hparams.optimizer == "sgd":
-        optimizer = SGD(parameters, lr=hparams.lr, momentum=hparams.momentum, weight_decay=hparams.weight_decay)
+        optimizer = SGD(parameters, lr=hparams.lr,
+                        momentum=hparams.momentum, weight_decay=hparams.weight_decay)
     elif hparams.optimizer == "adam":
-        optimizer = Adam(parameters, lr=hparams.lr, eps=eps, weight_decay=hparams.weight_decay)
+        optimizer = Adam(parameters, lr=hparams.lr, eps=eps,
+                         weight_decay=hparams.weight_decay)
     elif hparams.optimizer == "radam":
-        optimizer = optim.RAdam(parameters, lr=hparams.lr, eps=eps, weight_decay=hparams.weight_decay)
+        optimizer = optim.RAdam(parameters, lr=hparams.lr,
+                                eps=eps, weight_decay=hparams.weight_decay)
     elif hparams.optimizer == "ranger":
-        optimizer = optim.Ranger(parameters, lr=hparams.lr, eps=eps, weight_decay=hparams.weight_decay)
+        optimizer = optim.Ranger(
+            parameters, lr=hparams.lr, eps=eps, weight_decay=hparams.weight_decay)
     else:
         raise ValueError("optimizer not recognized!")
 
@@ -46,11 +49,11 @@ def get_optimizer(hparams, models):
 def get_scheduler(hparams, optimizer):
     eps = 1e-8
     if hparams.lr_scheduler == "steplr":
-        scheduler = MultiStepLR(optimizer, milestones=hparams.decay_step, gamma=hparams.decay_gamma)
+        scheduler = MultiStepLR(
+            optimizer, milestones=hparams.decay_step, gamma=hparams.decay_gamma)
     elif hparams.lr_scheduler == "cosine":
-        scheduler = CosineAnnealingLR(optimizer, T_max=hparams.num_epochs, eta_min=eps)
-    elif hparams.lr_scheduler == "poly":
-        scheduler = LambdaLR(optimizer, lambda epoch: (1 - epoch / hparams.num_epochs) ** hparams.poly_exp)
+        scheduler = CosineAnnealingLR(
+            optimizer, T_max=hparams.num_epochs, eta_min=eps)
     else:
         raise ValueError("scheduler not recognized!")
 
@@ -78,7 +81,7 @@ def extract_model_state_dict(ckpt_path, model_name="model", prefixes_to_ignore=[
     for k, v in checkpoint.items():
         if not k.startswith(model_name):
             continue
-        k = k[len(model_name) + 1 :]
+        k = k[len(model_name) + 1:]
         for prefix in prefixes_to_ignore:
             if k.startswith(prefix):
                 print("ignore", k)
@@ -92,6 +95,7 @@ def load_ckpt(model, ckpt_path, model_name="model", prefixes_to_ignore=[]):
     if not ckpt_path:
         return
     model_dict = model.state_dict()
-    checkpoint_ = extract_model_state_dict(ckpt_path, model_name, prefixes_to_ignore)
+    checkpoint_ = extract_model_state_dict(
+        ckpt_path, model_name, prefixes_to_ignore)
     model_dict.update(checkpoint_)
     model.load_state_dict(model_dict)
