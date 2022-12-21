@@ -1,8 +1,8 @@
 import glob
 import os
-import numpy as np
 from collections import defaultdict
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from datasets import dataset_dict
@@ -35,7 +35,7 @@ from pytorch_lightning.plugins import DDPPlugin
 from torch.utils.data import DataLoader
 
 # optimizer, scheduler, visualization
-from utils import load_ckpt, visualize_depth, get_optimizer, get_scheduler, get_learning_rate
+from utils import get_learning_rate, get_optimizer, get_scheduler, load_ckpt, visualize_depth
 
 
 @torch.no_grad()
