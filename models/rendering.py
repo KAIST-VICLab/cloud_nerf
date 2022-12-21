@@ -1,7 +1,8 @@
+import numpy as np
 import torch
 import torch.nn.functional as F
 from einops import rearrange, reduce, repeat
-import numpy as np
+
 
 __all__ = ["render_rays"]
 
