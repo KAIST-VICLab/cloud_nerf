@@ -33,7 +33,6 @@ def find_knn(gpu_index, locs, current_codes, neighbor=config['code_cloud']['num_
 
     gpu_index.search(locs, neighbor, new_d_square_torch_gpu, new_i_torch_gpu)
     gpu_index.reset()
-    # new_d_torch_gpu = torch.sqrt(new_d_torch_gpu)
 
     return new_d_square_torch_gpu, new_i_torch_gpu
 
