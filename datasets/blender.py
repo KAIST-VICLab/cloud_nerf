@@ -7,7 +7,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms as T
 
-from .ray_utils import *
+from .ray_utils import get_ray_directions, get_rays
 
 
 class BlenderDataset(Dataset):
@@ -51,16 +51,19 @@ class BlenderDataset(Dataset):
                 self.poses += [pose]
                 c2w = torch.FloatTensor(pose)
 
-                image_path = os.path.join(self.root_dir, f"{frame['file_path']}.png")
+                image_path = os.path.join(
+                    self.root_dir, f"{frame['file_path']}.png")
                 self.image_paths += [image_path]
                 img = Image.open(image_path)
                 img = img.resize(self.img_wh, Image.Resampling.LANCZOS)
                 img = self.transform(img)  # (4, h, w)
                 img = img.view(4, -1).permute(1, 0)  # (h*w, 4) RGBA
-                img = img[:, :3] * img[:, -1:] + (1 - img[:, -1:])  # blend A to RGB
+                img = img[:, :3] * img[:, -1:] + \
+                    (1 - img[:, -1:])  # blend A to RGB
                 self.all_rgbs += [img]
 
-                rays_o, rays_d = get_rays(self.directions, c2w)  # both (h*w, 3)
+                rays_o, rays_d = get_rays(
+                    self.directions, c2w)  # both (h*w, 3)
 
                 self.all_rays += [
                     torch.cat(
@@ -97,12 +100,14 @@ class BlenderDataset(Dataset):
             frame = self.meta["frames"][idx]
             c2w = torch.FloatTensor(frame["transform_matrix"])[:3, :4]
 
-            img = Image.open(os.path.join(self.root_dir, f"{frame['file_path']}.png"))
+            img = Image.open(os.path.join(
+                self.root_dir, f"{frame['file_path']}.png"))
             img = img.resize(self.img_wh, Image.Resampling.LANCZOS)
             img = self.transform(img)  # (4, H, W)
             valid_mask = (img[-1] > 0).flatten()  # (H*W) valid color area
             img = img.view(4, -1).permute(1, 0)  # (H*W, 4) RGBA
-            img = img[:, :3] * img[:, -1:] + (1 - img[:, -1:])  # blend A to RGB
+            img = img[:, :3] * img[:, -1:] + \
+                (1 - img[:, -1:])  # blend A to RGB
 
             rays_o, rays_d = get_rays(self.directions, c2w)
 
@@ -116,6 +121,7 @@ class BlenderDataset(Dataset):
                 1,
             )  # (H*W, 8)
 
-            sample = {"rays": rays, "rgbs": img, "c2w": c2w, "valid_mask": valid_mask}
+            sample = {"rays": rays, "rgbs": img,
+                      "c2w": c2w, "valid_mask": valid_mask}
 
         return sample
