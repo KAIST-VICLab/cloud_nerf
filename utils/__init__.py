@@ -8,6 +8,7 @@ from torch.optim import SGD, Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR, MultiStepLR
 
 from .warmup_scheduler import GradualWarmupScheduler
+from .visualization import visualize_depth
 
 
 def get_parameters(models):

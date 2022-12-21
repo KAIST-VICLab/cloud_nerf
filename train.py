@@ -1,25 +1,27 @@
 import glob
 import os
+import numpy as np
 from collections import defaultdict
 
 import torch
+import torch.nn.functional as F
 from datasets import dataset_dict
 
 # colmap
 from datasets.colmap_utils import read_cameras_binary, read_images_binary, read_points3d_binary
 from datasets.llff import center_poses
-from datasets.ray_utils import *
+from datasets.ray_utils import get_ndc_coor, read_gen
 
 # losses
 from losses import loss_dict
 
 # metrics
-from metrics import *
-from models.cloud_code import *
+from metrics import psnr
+from models.cloud_code import CloudNeRF, config
 
 # models
-from models.nerf import *
-from models.rendering import *
+from models.nerf import Embedding
+from models.rendering import render_rays
 from opt import get_opts
 
 # fps
@@ -27,23 +29,24 @@ from pointnet2_ops.pointnet2_utils import furthest_point_sample, gather_operatio
 
 # pytorch-lightning
 from pytorch_lightning import LightningModule, Trainer
-from pytorch_lightning.accelerators import accelerator
 from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.plugins import DDPPlugin
 from torch.utils.data import DataLoader
 
 # optimizer, scheduler, visualization
-from utils import *
+from utils import load_ckpt, visualize_depth, get_optimizer, get_scheduler, get_learning_rate
 
 
 @torch.no_grad()
 def fps(points, n_samples):
-    points = torch.from_numpy(points).unsqueeze(0).float().cuda()  # 1, N_points, 3
+    points = torch.from_numpy(points).unsqueeze(
+        0).float().cuda()  # 1, N_points, 3
     points_flipped = points.transpose(1, 2).contiguous()
     fps_index = furthest_point_sample(points, n_samples)  # 1, n_samples
 
-    fps_kps = gather_operation(points_flipped, fps_index).transpose(1, 2).contiguous().squeeze(0)  # n_samples, 3
+    fps_kps = gather_operation(points_flipped, fps_index).transpose(
+        1, 2).contiguous().squeeze(0)  # n_samples, 3
     return fps_kps.cpu().numpy()
 
 
@@ -57,30 +60,34 @@ class NeRFSystem(LightningModule):
 
         self.embedding_xyz = Embedding(hparams.N_emb_xyz)
         self.embedding_dir = Embedding(hparams.N_emb_dir)
-        self.embeddings = {"xyz": self.embedding_xyz, "dir": self.embedding_dir}
+        self.embeddings = {"xyz": self.embedding_xyz,
+                           "dir": self.embedding_dir}
 
         kps, fps_kps = self.read_colmap_meta(hparams)
 
         if hparams.N_importance == 0:
-            self.nerf_coarse = CloudNeRF(kps, fps_kps, 6 * hparams.N_emb_xyz + 3, 6 * hparams.N_emb_dir + 3)
+            self.nerf_coarse = CloudNeRF(
+                kps, fps_kps, 6 * hparams.N_emb_xyz + 3, 6 * hparams.N_emb_dir + 3)
 
             self.models = {"coarse": self.nerf_coarse}
             load_ckpt(self.nerf_coarse, hparams.weight_path, "nerf_coarse")
 
         else:
-            self.nerf_fine = CloudNeRF(kps, fps_kps, 6 * hparams.N_emb_xyz + 3, 6 * hparams.N_emb_dir + 3)
+            self.nerf_fine = CloudNeRF(
+                kps, fps_kps, 6 * hparams.N_emb_xyz + 3, 6 * hparams.N_emb_dir + 3)
 
             self.models = {"fine": self.nerf_fine}
             load_ckpt(self.nerf_fine, hparams.weight_path, "nerf_fine")
 
     def read_colmap_meta(self, hparams):
-        camdata = read_cameras_binary(os.path.join(hparams.root_dir, "sparse/0/cameras.bin"))
+        camdata = read_cameras_binary(os.path.join(
+            hparams.root_dir, "sparse/0/cameras.bin"))
         self.origin_intrinsics = camdata
-        H = camdata[1].height
         W = camdata[1].width
         self.focal = camdata[1].params[0] * hparams.img_wh[0] / W
 
-        imdata = read_images_binary(os.path.join(hparams.root_dir, "sparse/0/images.bin"))
+        imdata = read_images_binary(os.path.join(
+            hparams.root_dir, "sparse/0/images.bin"))
 
         w2c_mats = []
         bottom = np.array([0, 0, 0, 1.0]).reshape(1, 4)
@@ -94,7 +101,8 @@ class NeRFSystem(LightningModule):
         poses = np.linalg.inv(w2c_mats)[:, :3]
         self.origin_extrinsics = poses
 
-        pts3d = read_points3d_binary(os.path.join(hparams.root_dir, "sparse/0/points3D.bin"))
+        pts3d = read_points3d_binary(os.path.join(
+            hparams.root_dir, "sparse/0/points3D.bin"))
 
         mvs_points = self.load_mvs_depth().numpy()
         near_bound = mvs_points.min(axis=0)[-1]
@@ -102,7 +110,8 @@ class NeRFSystem(LightningModule):
 
         pts_world = np.zeros((1, 3, len(pts3d)))  # (1, 3, N_points)
         self.bounds = np.zeros((len(poses), 2))  # (N_images, 2)
-        visibilities = np.zeros((len(poses), len(pts3d)))  # (N_images, N_points)
+        visibilities = np.zeros((len(poses), len(pts3d))
+                                )  # (N_images, N_points)
 
         for i, k in enumerate(pts3d):
             pts_world[0, :, i] = pts3d[k].xyz
@@ -114,7 +123,8 @@ class NeRFSystem(LightningModule):
             visibility_i = visibilities[i]
             zs = depths[i][visibility_i == 1]
             self.bounds[i] = [np.percentile(zs, 0.1), np.percentile(zs, 99.9)]
-            valid_depth = (depths[i] >= self.bounds[i][0]) & (depths[i] <= self.bounds[i][1])
+            valid_depth = (depths[i] >= self.bounds[i][0]) & (
+                depths[i] <= self.bounds[i][1])
             visibility_i = visibility_i.astype(bool) & valid_depth
             visibilities[i] = visibility_i.astype(np.float64)
 
@@ -126,15 +136,19 @@ class NeRFSystem(LightningModule):
         global_kps = fps(mvs_points, pts_world.shape[0])
 
         pts_world = np.concatenate([pts_world, global_kps], axis=0)
-        poses = np.concatenate([poses[..., 0:1], -poses[..., 1:3], poses[..., 3:4]], -1)
+        poses = np.concatenate(
+            [poses[..., 0:1], -poses[..., 1:3], poses[..., 3:4]], -1)
         poses, pose_avg = center_poses(poses)
         pose_avg_homo = np.eye(4)
         pose_avg_homo[:3] = pose_avg
 
-        pts_world_homo = np.concatenate([pts_world, np.ones((pts_world.shape[0], 1))], axis=1)
-        fps_kps_homo = np.concatenate([fps_kps, np.ones((fps_kps.shape[0], 1))], axis=1)
+        pts_world_homo = np.concatenate(
+            [pts_world, np.ones((pts_world.shape[0], 1))], axis=1)
+        fps_kps_homo = np.concatenate(
+            [fps_kps, np.ones((fps_kps.shape[0], 1))], axis=1)
 
-        trans_pts_world = np.linalg.inv(pose_avg_homo) @ pts_world_homo[:, :, None]
+        trans_pts_world = np.linalg.inv(
+            pose_avg_homo) @ pts_world_homo[:, :, None]
         trans_fps_kps = np.linalg.inv(pose_avg_homo) @ fps_kps_homo[:, :, None]
 
         kps = torch.from_numpy(trans_pts_world[:, :3, 0])
@@ -145,8 +159,10 @@ class NeRFSystem(LightningModule):
         fps_kps /= scale_factor
 
         # convert to ndc
-        kps_ndc = get_ndc_coor(hparams.img_wh[1], hparams.img_wh[0], self.focal, 1.0, kps)
-        fps_kps_ndc = get_ndc_coor(hparams.img_wh[1], hparams.img_wh[0], self.focal, 1.0, fps_kps)
+        kps_ndc = get_ndc_coor(
+            hparams.img_wh[1], hparams.img_wh[0], self.focal, 1.0, kps)
+        fps_kps_ndc = get_ndc_coor(
+            hparams.img_wh[1], hparams.img_wh[0], self.focal, 1.0, fps_kps)
         return kps_ndc, fps_kps_ndc
 
     def load_mvs_depth(self):
@@ -170,7 +186,8 @@ class NeRFSystem(LightningModule):
 
         origin_cy, origin_cx = self.origin_intrinsics[1].params[2], self.origin_intrinsics[1].params[1]
 
-        origin_K = np.array([[focal, 0, origin_cx, 0], [0, focal, origin_cy, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
+        origin_K = np.array([[focal, 0, origin_cx, 0], [
+                            0, focal, origin_cy, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
 
         origin_K[0, :] /= origin_w
         origin_K[1, :] /= origin_h
@@ -187,19 +204,22 @@ class NeRFSystem(LightningModule):
 
         # create mesh grid for mvs image
         meshgrid = np.meshgrid(range(W), range(H), indexing="xy")
-        id_coords = (np.stack(meshgrid, axis=0).astype(np.float32)).reshape(2, -1)
+        id_coords = (np.stack(meshgrid, axis=0).astype(
+            np.float32)).reshape(2, -1)
         id_coords = torch.from_numpy(id_coords)
 
         ones = torch.ones(N, 1, H * W)
 
-        pix_coords = torch.unsqueeze(torch.stack([id_coords[0].view(-1), id_coords[1].view(-1)], 0), 0)
+        pix_coords = torch.unsqueeze(torch.stack(
+            [id_coords[0].view(-1), id_coords[1].view(-1)], 0), 0)
         pix_coords = pix_coords.repeat(N, 1, 1)
         pix_coords = torch.cat([pix_coords, ones], 1)
 
         # project to cam coord
         inv_mvs_K = inv_mvs_K[None, ...].repeat(N, 1, 1).float()
         cam_points = torch.matmul(inv_mvs_K[:, :3, :3], pix_coords)
-        mvs_depth = torch.from_numpy(self.depths).float().unsqueeze(1).view(N, 1, -1)
+        mvs_depth = torch.from_numpy(
+            self.depths).float().unsqueeze(1).view(N, 1, -1)
         cam_points = mvs_depth * cam_points
         cam_points = torch.cat([cam_points, ones], 1)
 
@@ -214,9 +234,12 @@ class NeRFSystem(LightningModule):
         N, H, W = self.depths.shape
         global_valid_points = []
         for view_id in range(per_view_points.shape[0]):
-            curr_view_points = per_view_points[view_id].transpose(1, 0)  # 3, H*W
-            homo_view_points = torch.cat([curr_view_points, torch.ones(1, H * W)], dim=0)  # 4, H*W
-            homo_view_points = homo_view_points.unsqueeze(0).repeat(N, 1, 1)  # N,4,H*W
+            curr_view_points = per_view_points[view_id].transpose(
+                1, 0)  # 3, H*W
+            homo_view_points = torch.cat(
+                [curr_view_points, torch.ones(1, H * W)], dim=0)  # 4, H*W
+            homo_view_points = homo_view_points.unsqueeze(
+                0).repeat(N, 1, 1)  # N,4,H*W
 
             # project to camera space
             T = torch.from_numpy(self.origin_extrinsics).float()
@@ -226,28 +249,34 @@ class NeRFSystem(LightningModule):
             cam_points = torch.matmul(inv_T[:, :3, :], homo_view_points)
 
             # project to image space
-            mvs_K = torch.from_numpy(self.mvs_K).unsqueeze(0).repeat(N, 1, 1).float()
+            mvs_K = torch.from_numpy(self.mvs_K).unsqueeze(
+                0).repeat(N, 1, 1).float()
             cam_points = torch.matmul(mvs_K[:, :3, :3], cam_points)
             cam_points[:, :2, :] /= cam_points[:, 2:, :]
 
             z_values = cam_points[:, 2:, :].view(N, 1, H, W)  # N,1,H,W
-            xy_coords = cam_points[:, :2, :].transpose(2, 1).view(N, H, W, 2)  # N,H,W,2
+            xy_coords = cam_points[:, :2, :].transpose(
+                2, 1).view(N, H, W, 2)  # N,H,W,2
 
             xy_coords[..., 0] /= W - 1
             xy_coords[..., 1] /= H - 1
             xy_coords = (xy_coords - 0.5) * 2
 
-            mvs_depth = torch.from_numpy(self.depths).float().unsqueeze(1)  # N,1,H,W
-            ref_z_values = F.grid_sample(mvs_depth, xy_coords, mode="bilinear", align_corners=False)
+            mvs_depth = torch.from_numpy(
+                self.depths).float().unsqueeze(1)  # N,1,H,W
+            ref_z_values = F.grid_sample(
+                mvs_depth, xy_coords, mode="bilinear", align_corners=False)
             err = z_values - 0.9 * ref_z_values
 
             visible_mask = ref_z_values != 0
             visible_count = visible_mask.int().sum(0)
             valid_visible = visible_count >= 1
             valid_points = err >= 0
-            valid_points = torch.all(valid_points, dim=0) & valid_visible  # 1,H,W
+            valid_points = torch.all(
+                valid_points, dim=0) & valid_visible  # 1,H,W
             global_valid_points.append(valid_points)
-        global_valid_points = torch.cat(global_valid_points, dim=0).view(N, H * W)  # N,H,W
+        global_valid_points = torch.cat(
+            global_valid_points, dim=0).view(N, H * W)  # N,H,W
 
         filtered_points = per_view_points[global_valid_points, :]
         return filtered_points
@@ -260,7 +289,7 @@ class NeRFSystem(LightningModule):
             rendered_ray_chunks = render_rays(
                 self.models,
                 self.embeddings,
-                rays[i : i + self.hparams.chunk],
+                rays[i: i + self.hparams.chunk],
                 self.hparams.N_samples,
                 self.hparams.use_disp,
                 self.hparams.perturb,
@@ -279,7 +308,8 @@ class NeRFSystem(LightningModule):
 
     def setup(self, stage):
         dataset = dataset_dict[self.hparams.dataset_name]
-        kwargs = {"root_dir": self.hparams.root_dir, "img_wh": tuple(self.hparams.img_wh)}
+        kwargs = {"root_dir": self.hparams.root_dir,
+                  "img_wh": tuple(self.hparams.img_wh)}
         if self.hparams.dataset_name == "llff":
             kwargs["val_num"] = 3
         self.train_dataset = dataset(split="train", **kwargs)
@@ -330,11 +360,14 @@ class NeRFSystem(LightningModule):
 
         if batch_nb == 0:
             W, H = self.hparams.img_wh
-            img = results[f"rgb_{typ}"].view(H, W, 3).permute(2, 0, 1).cpu()  # (3, H, W)
+            img = results[f"rgb_{typ}"].view(
+                H, W, 3).permute(2, 0, 1).cpu()  # (3, H, W)
             img_gt = rgbs.view(H, W, 3).permute(2, 0, 1).cpu()  # (3, H, W)
-            depth = visualize_depth(results[f"depth_{typ}"].view(H, W))  # (3, H, W)
+            depth = visualize_depth(
+                results[f"depth_{typ}"].view(H, W))  # (3, H, W)
             stack = torch.stack([img_gt, img, depth])  # (3, 3, H, W)
-            self.logger.experiment.add_images("val/GT_pred_depth", stack, self.global_step)
+            self.logger.experiment.add_images(
+                "val/GT_pred_depth", stack, self.global_step)
 
         psnr_ = psnr(results[f"rgb_{typ}"], rgbs)
         log["val_psnr"] = psnr_
@@ -357,7 +390,8 @@ def main(hparams):
     pbar = TQDMProgressBar(refresh_rate=1)
     callbacks = [ckpt_cb, pbar]
 
-    logger = TensorBoardLogger(save_dir="logs", name=hparams.exp_name, default_hp_metric=False)
+    logger = TensorBoardLogger(
+        save_dir="logs", name=hparams.exp_name, default_hp_metric=False)
 
     trainer = Trainer(
         max_epochs=hparams.num_epochs,
@@ -370,7 +404,8 @@ def main(hparams):
         num_sanity_val_steps=1,
         benchmark=True,
         profiler="simple" if hparams.num_gpus == 1 else None,
-        strategy=DDPPlugin(find_unused_parameters=False) if hparams.num_gpus > 1 else None,
+        strategy=DDPPlugin(
+            find_unused_parameters=False) if hparams.num_gpus > 1 else None,
     )
 
     trainer.fit(system)
