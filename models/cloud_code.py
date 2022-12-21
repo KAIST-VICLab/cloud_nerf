@@ -8,25 +8,23 @@ import faiss.contrib.torch_utils
 
 # ! CloudNeRF configs
 config = {}
-config['code_cloud'] = {}
-config['code_cloud']['num_codes'] = 8192  # 8192
-config['code_cloud']['num_neighbors'] = 32  # 32
+config["code_cloud"] = {}
+config["code_cloud"]["num_codes"] = 8192  # 8192
+config["code_cloud"]["num_neighbors"] = 32  # 32
 
-config['code_cloud']['code_dim'] = 64  # 64
-config['code_cloud']['dist_scale'] = 3.0
-config['code_regularization_lambda'] = 0.0
-config['code_position_lambda'] = 0
-config['distortion_lambda'] = 0
+config["code_cloud"]["code_dim"] = 64  # 64
+config["code_cloud"]["dist_scale"] = 3.0
+config["code_regularization_lambda"] = 0.0
+config["code_position_lambda"] = 0
+config["distortion_lambda"] = 0
 
 
 @torch.no_grad()
-def find_knn(gpu_index, locs, current_codes, neighbor=config['code_cloud']['num_neighbors']):
+def find_knn(gpu_index, locs, current_codes, neighbor=config["code_cloud"]["num_neighbors"]):
     n_points = locs.shape[0]
     # Search with torch GPU using pre-allocated arrays
-    new_d_square_torch_gpu = torch.zeros(
-        n_points, neighbor, device=locs.device, dtype=torch.float32)
-    new_i_torch_gpu = torch.zeros(
-        n_points, neighbor, device=locs.device, dtype=torch.int64)
+    new_d_square_torch_gpu = torch.zeros(n_points, neighbor, device=locs.device, dtype=torch.float32)
+    new_i_torch_gpu = torch.zeros(n_points, neighbor, device=locs.device, dtype=torch.int64)
 
     # update current codes
     gpu_index.add(current_codes)
@@ -39,31 +37,28 @@ def find_knn(gpu_index, locs, current_codes, neighbor=config['code_cloud']['num_
 
 class CodeCloud(nn.Module):
     def __init__(self, config, num_records, keypoints, fps_keypoints):
-        print(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'Building CodeCloud.')
+        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Building CodeCloud.")
         super().__init__()
         self.config = config
         self.SH_basis_dim = 9
-        self.origin_keypoints = nn.Parameter(torch.Tensor(
-            keypoints.float())[None, ...].repeat(num_records, 1, 1), requires_grad=False)
+        self.origin_keypoints = nn.Parameter(
+            torch.Tensor(keypoints.float())[None, ...].repeat(num_records, 1, 1), requires_grad=False
+        )
 
-        self.codes_position = nn.Parameter(torch.Tensor(
-            fps_keypoints.float())[None, ...].repeat(num_records, 1, 1))
-        self.codes = nn.Parameter(torch.randn(
-            num_records, config['num_codes'], config['code_dim']) * 0.01)
+        self.codes_position = nn.Parameter(torch.Tensor(fps_keypoints.float())[None, ...].repeat(num_records, 1, 1))
+        self.codes = nn.Parameter(torch.randn(num_records, config["num_codes"], config["code_dim"]) * 0.01)
 
         self.knn = self.init_knn()
 
         num_params = sum(p.data.nelement() for p in self.parameters())
-        print(datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-              'CodeCloud done(#parameters=%d).' % num_params)
+        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "CodeCloud done(#parameters=%d)." % num_params)
 
     def init_knn(self):
         faiss_cfg = faiss.GpuIndexFlatConfig()
         faiss_cfg.useFloat16 = True
         faiss_cfg.device = 0
 
-        return faiss.GpuIndexFlatL2(
-            faiss.StandardGpuResources(), 3, faiss_cfg)
+        return faiss.GpuIndexFlatL2(faiss.StandardGpuResources(), 3, faiss_cfg)
 
     def query(self, indices, query_points):
         """
@@ -78,24 +73,22 @@ class CodeCloud(nn.Module):
         batch_codes_position = self.codes_position[indices]
 
         # ! NO GRAD: Need to recompute the square distance for gradients
-        _, new_i_torch_gpu = find_knn(
-            self.knn, query_points[0], batch_codes_position[0])
+        _, new_i_torch_gpu = find_knn(self.knn, query_points[0], batch_codes_position[0])
 
-        square_dist = (query_points.unsqueeze(
-            2) - self.codes_position[indices][:, new_i_torch_gpu, :]).pow(2).sum(dim=-1) + 1e-16
+        square_dist = (query_points.unsqueeze(2) - self.codes_position[indices][:, new_i_torch_gpu, :]).pow(2).sum(
+            dim=-1
+        ) + 1e-16
 
-        weight = 1.0 / (torch.sqrt(square_dist) ** self.config['dist_scale'])
+        weight = 1.0 / (torch.sqrt(square_dist) ** self.config["dist_scale"])
         weight = weight / weight.sum(dim=-1, keepdim=True)
 
-        query_codes = torch.matmul(
-            weight[0].unsqueeze(1), self.codes[indices][:, new_i_torch_gpu, :][0]).squeeze(1)
+        query_codes = torch.matmul(weight[0].unsqueeze(1), self.codes[indices][:, new_i_torch_gpu, :][0]).squeeze(1)
 
         return query_codes
 
     def get_proposal(self, pts):
         n_rays, n_samples, _ = pts.shape
-        new_d_torch_gpu, _ = find_knn(
-            self.knn, pts.flatten(0, 1), self.origin_keypoints[0])
+        new_d_torch_gpu, _ = find_knn(self.knn, pts.flatten(0, 1), self.origin_keypoints[0])
 
         farthest_d = new_d_torch_gpu[:, -1].view(n_rays, n_samples)
 
@@ -107,12 +100,8 @@ class CodeCloud(nn.Module):
 
 
 class IM_Decoder(nn.Module):
-    def __init__(self,
-                 D=8, W=256,
-                 in_channels_xyz=63, in_channels_dir=27,
-                 skips=[4]):
-        print(datetime.now().strftime(
-            '%Y-%m-%d %H:%M:%S'), 'Building IM-decoder.')
+    def __init__(self, D=8, W=256, in_channels_xyz=63, in_channels_dir=27, skips=[4]):
+        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Building IM-decoder.")
         super(IM_Decoder, self).__init__()
         self.D = D
         self.W = W
@@ -133,22 +122,17 @@ class IM_Decoder(nn.Module):
         self.xyz_encoding_final = nn.Linear(W, W)
 
         # direction encoding layers
-        self.dir_encoding = nn.Sequential(
-            nn.Linear(W + in_channels_dir, W // 2),
-            nn.ReLU(True))
+        self.dir_encoding = nn.Sequential(nn.Linear(W + in_channels_dir, W // 2), nn.ReLU(True))
 
         # output layers
         self.sigma = nn.Linear(W, 1)
         self.rgb = nn.Linear(W // 2, 3)
 
         num_params = sum(p.data.nelement() for p in self.parameters())
-        print(datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-              'IM decoder done(#parameters=%d).' % num_params)
+        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "IM decoder done(#parameters=%d)." % num_params)
 
     def forward(self, x):
-        input_xyz, input_dir = \
-            torch.split(x, [self.in_channels_xyz,
-                        self.in_channels_dir], dim=-1)
+        input_xyz, input_dir = torch.split(x, [self.in_channels_xyz, self.in_channels_dir], dim=-1)
         xyz_ = input_xyz
         for i in range(self.D):
             if i in self.skips:
@@ -170,20 +154,22 @@ class IM_Decoder(nn.Module):
 
 class CloudNeRF(nn.Module):
     def __init__(self, keypoints, fps_kps, input_ch, input_ch_views, num_records=1):
-        print(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'Building network.')
+        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Building network.")
         super().__init__()
         global config
         self.config = config
 
-        self.code_cloud = CodeCloud(
-            config['code_cloud'], num_records, keypoints, fps_kps)
-        self.decoder = IM_Decoder(D=4, W=128,
-                                  in_channels_xyz=config['code_cloud']['code_dim'] + input_ch, in_channels_dir=input_ch_views,
-                                  skips=[2])
+        self.code_cloud = CodeCloud(config["code_cloud"], num_records, keypoints, fps_kps)
+        self.decoder = IM_Decoder(
+            D=4,
+            W=128,
+            in_channels_xyz=config["code_cloud"]["code_dim"] + input_ch,
+            in_channels_dir=input_ch_views,
+            skips=[2],
+        )
 
         num_params = sum(p.data.nelement() for p in self.parameters())
-        print(datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-              'Network done(#parameters=%d).' % num_params)
+        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Network done(#parameters=%d)." % num_params)
 
     def forward(self, indices, query_points, xyzdir_embedded):
         """
@@ -193,8 +179,7 @@ class CloudNeRF(nn.Module):
         Returns:
             pred_sd: tensor, (batch_size, num_points)
         """
-        query_codes = self.code_cloud.query(
-            indices, query_points[None, ...])
+        query_codes = self.code_cloud.query(indices, query_points[None, ...])
 
         batch_input = torch.cat([query_codes, xyzdir_embedded], dim=-1)
         pred_sd = self.decoder(batch_input)
