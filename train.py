@@ -1,41 +1,40 @@
-import os
 import glob
-
-from pytorch_lightning.accelerators import accelerator
-from opt import get_opts
-import torch
+import os
 from collections import defaultdict
 
-from torch.utils.data import DataLoader
+import torch
 from datasets import dataset_dict
 
-# models
-from models.nerf import *
-from models.rendering import *
-from models.cloud_code import *
-
-# optimizer, scheduler, visualization
-from utils import *
+# colmap
+from datasets.colmap_utils import read_cameras_binary, read_images_binary, read_points3d_binary
+from datasets.llff import center_poses
+from datasets.ray_utils import *
 
 # losses
 from losses import loss_dict
 
 # metrics
 from metrics import *
+from models.cloud_code import *
 
-# pytorch-lightning
-from pytorch_lightning import LightningModule, Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
-from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.plugins import DDPPlugin
-
-# colmap
-from datasets.colmap_utils import read_cameras_binary, read_images_binary, read_points3d_binary
-from datasets.ray_utils import *
-from datasets.llff import center_poses
+# models
+from models.nerf import *
+from models.rendering import *
+from opt import get_opts
 
 # fps
 from pointnet2_ops.pointnet2_utils import furthest_point_sample, gather_operation
+
+# pytorch-lightning
+from pytorch_lightning import LightningModule, Trainer
+from pytorch_lightning.accelerators import accelerator
+from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
+from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.plugins import DDPPlugin
+from torch.utils.data import DataLoader
+
+# optimizer, scheduler, visualization
+from utils import *
 
 
 @torch.no_grad()
