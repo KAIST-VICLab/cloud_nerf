@@ -23,6 +23,13 @@ def get_opts():
         help="whether images are taken in spheric poses (for llff)",
     )
 
+    parser.add_argument(
+        "--not_use_mvs",
+        default=False,
+        action="store_true",
+        help="whether exclude the mvs points cloud",
+    )
+
     parser.add_argument("--N_emb_xyz", type=int, default=10,
                         help="number of frequencies in xyz positional encoding")
     parser.add_argument("--N_emb_dir", type=int, default=4,
