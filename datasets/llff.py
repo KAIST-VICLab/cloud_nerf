@@ -186,6 +186,7 @@ class LLFFDataset(Dataset):
         self.img_wh = img_wh
         self.spheric_poses = spheric_poses
         self.val_num = max(1, val_num)  # at least 1
+        self.holdout = 8
         self.define_transforms()
 
         self.read_meta()
@@ -379,10 +380,7 @@ class LLFFDataset(Dataset):
 
         # choose val image same as nerf 0, 8 ,16
         indicies = np.arange(distances_from_center.shape[0], dtype=int)
-        sort_indices = np.argsort(distances_from_center)
-        # val_idx = indicies[np.mod(
-        #     np.arange(distances_from_center.shape[0], dtype=int), 8) == 0]
-        val_idx = indicies[sort_indices[:3]]
+        val_idx = indicies[::self.holdout]
         # center image
 
         # Step 3: correct scale so that the nearest depth is at a little more than 1.0
