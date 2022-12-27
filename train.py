@@ -135,7 +135,11 @@ class NeRFSystem(LightningModule):
         fps_kps = fps(pts_world, config["code_cloud"]["num_codes"])
         global_kps = fps(mvs_points, pts_world.shape[0])
 
-        pts_world = np.concatenate([pts_world, global_kps], axis=0)
+        if hparams.not_use_mvs:
+            pts_world = np.concatenate([pts_world], axis=0)
+        else:
+            pts_world = np.concatenate([pts_world, global_kps], axis=0)
+
         poses = np.concatenate(
             [poses[..., 0:1], -poses[..., 1:3], poses[..., 3:4]], -1)
         poses, pose_avg = center_poses(poses)
