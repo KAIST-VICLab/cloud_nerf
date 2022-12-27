@@ -127,6 +127,8 @@ def render_rays(
         else:  # infer rgb and sigma and others
             dir_embedded_ = repeat(
                 dir_embedded, "n1 c -> (n1 n2) c", n2=N_samples_)
+            if kwargs["use_sh_feat"]:
+                viewdirs = repeat(kwargs['viewdirs'], 'n1 c -> (n1 n2) c', n2=N_samples_)
             # (N_rays*N_samples_, embed_dir_channels)
             for i in range(0, B, chunk):
                 xyz_embedded = embedding_xyz(xyz_[i: i + chunk])
@@ -135,8 +137,12 @@ def render_rays(
                 # out_chunks += [model(xyzdir_embedded, sigma_only=False)]
                 # ! cloud nerf fwd
                 indices = torch.zeros(1, dtype=torch.long).cuda()
-                out_chunks += [model(indices, xyz_[i: i +
-                                     chunk], xyzdir_embedded)]
+                if kwargs["use_sh_feat"]:
+                    out_chunks += [model(indices, xyz_[i:i + chunk], viewdirs[i:i + chunk],
+                                     xyzdir_embedded)]
+                else:
+                    out_chunks += [model(indices, xyz_[i: i +
+                                        chunk], xyzdir_embedded)]
 
             out = torch.cat(out_chunks, 0)
             # out = out.view(N_rays, N_samples_, 4)
@@ -195,6 +201,8 @@ def render_rays(
     viewdirs = rays[:, 8:]  # (N_rays, 3)
     # Embed direction
     # (N_rays, embed_dir_channels)
+    if kwargs["use_sh_feat"]:
+        kwargs['viewdirs'] = viewdirs
     dir_embedded = embedding_dir(kwargs.get("view_dir", viewdirs))
 
     rays_o = rearrange(rays_o, "n1 c -> n1 1 c")

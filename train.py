@@ -17,7 +17,7 @@ from losses import loss_dict
 
 # metrics
 from metrics import psnr
-from models.cloud_code import CloudNeRF, config
+from models.cloud_code import CloudNeRF, SHCloudNeRF, config
 
 # models
 from models.nerf import Embedding
@@ -66,15 +66,23 @@ class NeRFSystem(LightningModule):
         kps, fps_kps = self.read_colmap_meta(hparams)
 
         if hparams.N_importance == 0:
-            self.nerf_coarse = CloudNeRF(
-                kps, fps_kps, 6 * hparams.N_emb_xyz + 3, 6 * hparams.N_emb_dir + 3)
+            if hparams.use_sh_feat:
+                self.nerf_coarse = SHCloudNeRF(
+                    kps, fps_kps, 6 * hparams.N_emb_xyz + 3, 6 * hparams.N_emb_dir + 3)
+            else:
+                self.nerf_coarse = CloudNeRF(
+                    kps, fps_kps, 6 * hparams.N_emb_xyz + 3, 6 * hparams.N_emb_dir + 3)
 
             self.models = {"coarse": self.nerf_coarse}
             load_ckpt(self.nerf_coarse, hparams.weight_path, "nerf_coarse")
 
         else:
-            self.nerf_fine = CloudNeRF(
-                kps, fps_kps, 6 * hparams.N_emb_xyz + 3, 6 * hparams.N_emb_dir + 3)
+            if hparams.use_sh_feat:
+                self.nerf_fine = SHCloudNeRF(
+                    kps, fps_kps, 6 * hparams.N_emb_xyz + 3, 6 * hparams.N_emb_dir + 3)
+            else:
+                self.nerf_fine = CloudNeRF(
+                    kps, fps_kps, 6 * hparams.N_emb_xyz + 3, 6 * hparams.N_emb_dir + 3)
 
             self.models = {"fine": self.nerf_fine}
             load_ckpt(self.nerf_fine, hparams.weight_path, "nerf_fine")
@@ -301,6 +309,7 @@ class NeRFSystem(LightningModule):
                 self.hparams.N_importance,
                 self.hparams.chunk,  # chunk size is effective in val mode
                 self.train_dataset.white_back,
+                use_sh_feat = self.hparams.use_sh_feat
             )
 
             for k, v in rendered_ray_chunks.items():
