@@ -67,10 +67,13 @@ This is the official implementation of Neural Radiance Fields with Points Cloud 
 
 - Visualization of Fern scene
 <img src="assets/fern.gif" width="400">
+<img src="assets/fern.jpg" width="800">
 - Visualization of Horn scene
 <img src="assets/horn.gif" width="400">
+<img src="assets/horn.jpg" width="800">
 - Visualization of Room scene
 <img src="assets/room.gif" width="400">
+<img src="assets/room.jpg" width="800">
 
 
 # Acknowledgement
